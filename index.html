@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Push Notification - Frontend</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; max-width: 800px; margin: 0 auto; }
+        button { padding: 10px 15px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 4px; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        input[type="text"] { padding: 10px; width: 250px; border: 1px solid #ccc; border-radius: 4px; margin-right: 10px; }
+        .box { padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; background: #f9f9f9; }
+        #messages { min-height: 150px; background: #fff; border: 1px dashed #ccc; padding: 15px; }
+    </style>
+</head>
+<body>
+
+    <h2>Giao diện Sinh Token & Đăng ký Topic (Frontend)</h2>
+
+    <div class="box">
+        <h3>Bước 1: Lấy Device Token từ Firebase</h3>
+        <button id="btnGetToken" onclick="requestPermissionAndGetToken()">Bật Thông Báo & Lấy Token</button>
+        <p><strong>Token của máy này:</strong> <span id="tokenDisplay" style="color: green; word-break: break-all;">Chưa có</span></p>
+    </div>
+
+    <div class="box">
+        <h3>Bước 2: Gửi Token & Topic lên Backend</h3>
+        <input type="text" id="topicName" placeholder="Nhập tên topic (vd: tin-tuc)">
+        <button id="btnSubscribe" onclick="subscribeToTopic()" disabled>Gửi lên Backend</button>
+    </div>
+
+    <h3>Log Thông Báo (Foreground)</h3>
+    <div id="messages"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+        // Cấu hình Firebase Web Client của bạn (Public an toàn)
+        const firebaseConfig = {
+            apiKey: "AIzaSyDB_tuKO7XRfDY6g6IlNskSoMI_4Nfeips",
+            authDomain: "bitb-notification-a.firebaseapp.com",
+            databaseURL: "https://bitb-notification-a-default-rtdb.firebaseio.com",
+            projectId: "bitb-notification-a",
+            storageBucket: "bitb-notification-a.firebasestorage.app",
+            messagingSenderId: "919555812573",
+            appId: "1:919555812573:web:bc2d09a937d344a15c3f34",
+            measurementId: "G-QWE1R18CD1"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const messaging = getMessaging(app);
+        
+        let currentDeviceToken = null;
+
+        // BƯỚC 1: XIN QUYỀN VÀ SINH DEVICE TOKEN
+        window.requestPermissionAndGetToken = async function () {
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === "granted") {
+                    const token = await getToken(messaging, {
+                        vapidKey: "BJ149b8rPue51SErZu8fNO7RbX2Z8BixIzhJR8aANTs14Tk5rNfACtTiAjqI7roweyJoIltel4tjrgirxd4hptQ"
+                    });
+                    
+                    if (token) {
+                        currentDeviceToken = token;
+                        document.getElementById('tokenDisplay').innerText = token;
+                        document.getElementById('btnSubscribe').disabled = false;
+                        console.log("✅ Đã lấy được DEVICE TOKEN:", token);
+                    }
+                } else {
+                    alert("Bạn đã từ chối cấp quyền nhận thông báo!");
+                }
+            } catch (error) {
+                console.error("Lỗi khi sinh token:", error);
+            }
+        }
+
+        // BƯỚC 2: GỌI API BACKEND ĐỂ YÊU CẦU ĐĂNG KÝ TOPIC
+        window.subscribeToTopic = async function() {
+            const topic = document.getElementById('topicName').value.trim();
+            
+            if (!currentDeviceToken || !topic) {
+                alert("Vui lòng lấy Token và nhập tên Topic!");
+                return;
+            }
+
+            // ĐÂY LÀ CHỖ BẠN CẦN THAY ĐỔI
+            // Hãy hỏi team Backend xem URL API đăng ký topic của họ là gì rồi điền vào đây
+            const BACKEND_API_URL = "http://localhost:8000/api/subscribe-topic"; 
+
+            try {
+                console.log(`Đang gửi yêu cầu lên Backend: Token = ${currentDeviceToken.substring(0, 10)}..., Topic = ${topic}`);
+                
+                const response = await fetch(BACKEND_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        device_token: currentDeviceToken,
+                        topic: topic
+                    })
+                });
+
+                // Xử lý logic hiển thị dựa trên phản hồi của Backend
+                if (response.ok) {
+                    alert(`Đã gửi yêu cầu đăng ký topic '${topic}' lên Backend thành công!`);
+                } else {
+                    alert(`Backend trả về lỗi ${response.status}. Hãy kiểm tra lại API URL hoặc báo BE check lỗi.`);
+                }
+            } catch (error) {
+                console.error("Lỗi khi gọi API Backend:", error);
+                alert("Không thể kết nối đến Backend. Hãy đảm bảo API URL chính xác và Backend đang chạy.");
+            }
+        }
+
+        // BƯỚC 3: LẮNG NGHE THÔNG BÁO LÚC ĐANG MỞ TRANG (FOREGROUND)
+        onMessage(messaging, (payload) => {
+            console.log("📥 Nhận thông báo Foreground: ", payload);
+            
+            const title = payload.notification?.title || "Thông báo";
+            const body = payload.notification?.body || "...";
+            const messagesDiv = document.getElementById('messages');
+            const time = new Date().toLocaleTimeString('vi-VN');
+            
+            messagesDiv.innerHTML = `<p style="color: #0056b3; margin: 5px 0;">[${time}] 🔔 <b>${title}</b>: ${body}</p>` + messagesDiv.innerHTML;
+        });
+
+    </script>
+</body>
+</html>
